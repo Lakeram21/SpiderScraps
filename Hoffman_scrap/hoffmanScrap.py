@@ -18,6 +18,23 @@ import os
 import re
 import requests
 
+def check_url(raw_url):
+    if raw_url == '':
+        return ''
+    # format https:// for urls
+    url = raw_url.replace('http://', 'https://')
+
+    if url.startswith('//'):
+        url = 'https:' + url
+
+    if '.com' not in url and '.net' not in url and 'AuroraStorefront' not in url:
+        url = 'https://hoffman.nvent.com' + url
+
+    if 'https://' not in url:
+        url = 'https://' + url
+
+    return url
+
 def downloadPDF(url, dirPath, attempt=0, session=None):
     ''' download a PDF
         args:
@@ -124,72 +141,102 @@ def getListOfCatalogNum( excel_path,row_nam):
     return listOfCatalogNumber
    
 def getProductPage(catalogNum):
-    driverSoup =setUpSoup('https://hoffman.nvent.com/en-us/')
-    driver = driverSoup[0]
-    soup = driverSoup[1]
+    trying = 0
+    while trying < 3:
+        try:
+            driverSoup =setUpSoup('https://hoffman.nvent.com/en-us/')
+            driver = driverSoup[0]
+            soup = driverSoup[1]
 
-    # Get the search bar
-    searchBar = driver.find_element(By.XPATH,'//*[@id="coveo_block_standalone_search_box"]/div[3]/div[1]/input')
-    searchBar.send_keys(catalogNum)
-    searchBar.send_keys(Keys.RETURN)
+            # Get the search bar
+            searchBar = driver.find_element(By.XPATH,'//*[@id="coveo_block_standalone_search_box"]/div[3]/div[1]/input')
+            searchBar.send_keys(catalogNum)
+            searchBar.send_keys(Keys.RETURN)
 
-    # Find the Right Product
-    time.sleep(10)
-    driver.implicitly_wait(10)
-    
-    searchResultsContainers = driver.find_elements(By.CLASS_NAME,'coveo-result-list-container.coveo-list-layout-container')
-    if searchResultsContainers !=None:
-        for container in searchResultsContainers:
-            containerText = container.text
-            if catalogNum in containerText:
-                searchResultsDivs = container.find_elements(By.CLASS_NAME,'coveo-list-layout')
-                for div in searchResultsDivs:
-                    try:
-                        div.find_element(By.CLASS_NAME, 'nventCatalogId')
-                        link = div.find_element(By.TAG_NAME, 'h3').find_element(By.TAG_NAME, 'a')
-                        link.click()
-                        time.sleep(10)
-                        current_url = driver.current_url
-                        driver.close()  
-                        return current_url
-                    except NoSuchElementException:
-                        print("No such element")
-        return 0
+            # Find the Right Product
+            time.sleep(10)
+            driver.implicitly_wait(10)
+            
+            searchResultsContainers = driver.find_elements(By.CLASS_NAME,'coveo-result-list-container.coveo-list-layout-container')
+            if searchResultsContainers !=None:
+                for container in searchResultsContainers:
+                    containerText = container.text
+                    if catalogNum in containerText:
+                        searchResultsDivs = container.find_elements(By.CLASS_NAME,'coveo-list-layout')
+                        for div in searchResultsDivs:
+                            try:
+                                div.find_element(By.CLASS_NAME, 'nventCatalogId')
+                                link = div.find_element(By.TAG_NAME, 'h3').find_element(By.TAG_NAME, 'a')
+                                link.click()
+                                time.sleep(10)
+                                current_url = driver.current_url
+                                driver.close()  
+                                return current_url
+                            except NoSuchElementException:
+                                print("No such element")
+                return 0
+        except:
+            trying +=1
 
 def scrapProductInformation(productUrl, catalogNum):
-    description = {}
-    driverSoup = setUpSoup(productUrl)
-    driver = driverSoup[0]
-    soup = driverSoup[1]
+    trying = 0
+    while trying < 3:
+        try:
+            description = {}
+            driverSoup = setUpSoup(productUrl)
+            driver = driverSoup[0]
+            soup = driverSoup[1]
 
-    # Getting the image
-    productUrl = soup.find('li', {'class':'carousel__main-item carousel__item'}).find('img')['src']
-    productTitle = soup.find('h1', {'class':'product-hero__title'}).get_text()
+            # Getting the image
+            productUrl = soup.find('li', {'class':'carousel__main-item carousel__item'}).find('img')['src']
+            productTitle = soup.find('h1', {'class':'product-hero__title'}).get_text()
 
-    # getting the BreadCrums to make filters
-    breadCrumsCon = soup.find('ol', {'class':'breadcrumb'}).get_text()
-    breadCrumsCon = breadCrumsCon.split('\n\n')
-    filterCount = 1
-    for bread in breadCrumsCon:
-        if bread != '':
-            if bread != 'Home':
-                filter = bread.strip('\n')
-                description['Filter'+str(filterCount)]= filter
-                filterCount +=1
+            # getting the BreadCrums to make filters
+            breadCrumsCon = soup.find('ol', {'class':'breadcrumb'}).get_text()
+            breadCrumsCon = breadCrumsCon.split('\n\n')
+            filterCount = 1
+            for bread in breadCrumsCon:
+                if bread != '':
+                    if bread != 'Home':
+                        filter = bread.strip('\n')
+                        description['Filter'+str(filterCount)]= filter
+                        filterCount +=1
 
-    # Getting Product Description
-    productDescription = soup.find('div', {'class':'product-hero__description'}).get_text()
-    description['ProductDescription'] = productDescription
+            # Getting Product Description
+            productDescription = soup.find('div', {'class':'product-hero__description'}).get_text()
+            description['ProductDescription'] = productDescription
 
-    # Getting the product Attribute
-    productAttribute = soup.find('div', {'class':'products-attribute__wrapper'}).find_all('li')
-    for attrribute in productAttribute:
-        text = attrribute.get_text()
-        if ':' in text:
-            texts = text.split(':')
-            description[texts[0].strip().strip('\n')] = texts[1].strip().strip('\n')
+            # Getting the product Attribute
+            productAttribute = soup.find('div', {'class':'products-attribute__wrapper'}).find_all('li')
+            for attrribute in productAttribute:
+                text = attrribute.get_text()
+                if ':' in text:
+                    texts = text.split(':')
+                    description[texts[0].strip().strip('\n')] = texts[1].strip().strip('\n')
 
-    return description
+            # Find all the PDF on the page
+            links = getPagePDFs(soup)
+            description['Resources'] = links
+            
+            # Return new Description Array
+            trying = 6
+            return description
+        except:
+            trying +=1
+
+def getPagePDFs(soup):
+    # Getting all the pdfs
+    allLinks = soup.find_all('a')
+    modify_link = []
+    for link in allLinks:
+        if link.has_attr('href'):
+            new_link = link['href']
+            if '.pdf?' in new_link or '.zip?' in new_link:
+                new_link = check_url(new_link)
+                modify_link.append(new_link)
+    return modify_link
+
+
 
 def createDirectory(manufacturer):
      # create directory for outputs
