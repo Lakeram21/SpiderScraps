@@ -1,5 +1,6 @@
 from gettext import Catalog
 from time import time
+from numpy import prod
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
@@ -135,6 +136,7 @@ def setUpSoup(url):
 def getListOfCatalogNum( excel_path,row_nam):
     data = pd.read_excel(excel_path) 
     df = pd.DataFrame(data)
+    print(df.head())
     listOfCatalogNumber =[]
     for number in df[row_nam]:
         listOfCatalogNumber.append(number)
@@ -171,12 +173,15 @@ def getProductPage(catalogNum):
                                 time.sleep(10)
                                 current_url = driver.current_url
                                 driver.close()  
+                                trying = 5
                                 return current_url
                             except NoSuchElementException:
                                 print("No such element")
+                trying = 5
                 return 0
         except:
             trying +=1
+        return 0
 
 def scrapProductInformation(productUrl, catalogNum):
     trying = 0
@@ -204,7 +209,7 @@ def scrapProductInformation(productUrl, catalogNum):
 
             # Getting Product Description
             productDescription = soup.find('div', {'class':'product-hero__description'}).get_text()
-            description['ProductDescription'] = productDescription
+            
 
             # Getting the product Attribute
             productAttribute = soup.find('div', {'class':'products-attribute__wrapper'}).find_all('li')
@@ -217,25 +222,36 @@ def scrapProductInformation(productUrl, catalogNum):
             # Find all the PDF on the page
             links = getPagePDFs(soup)
             description['Resources'] = links
+            description['ProductDescription'] = productDescription
+            description['SKU'] = 'Hoffman'+ str(catalogNum)
+            description["Title"] = productTitle
+            description['ProductUrl'] = productUrl
             
             # Return new Description Array
             trying = 6
+            driver.close()
             return description
         except:
             trying +=1
 
 def getPagePDFs(soup):
     # Getting all the pdfs
-    allLinks = soup.find_all('a')
-    modify_link = []
-    for link in allLinks:
-        if link.has_attr('href'):
-            new_link = link['href']
-            if '.pdf?' in new_link or '.zip?' in new_link:
-                new_link = check_url(new_link)
-                modify_link.append(new_link)
-    return modify_link
-
+    trying = 0
+    while trying < 3:
+        try:
+            allLinks = soup.find_all('a')
+            modify_link = []
+            for link in allLinks:
+                if link.has_attr('href'):
+                    new_link = link['href']
+                    if '.pdf?' in new_link or '.zip?' in new_link:
+                        new_link = check_url(new_link)
+                        modify_link.append(new_link)
+            trying = 5
+            return modify_link
+        except:
+            trying +=1
+    return []
 
 
 def createDirectory(manufacturer):
@@ -248,7 +264,14 @@ def createDirectory(manufacturer):
 if __name__ == "__main__":
     df = pd.DataFrame()
     outputDir = createDirectory('Hoffman')
-    # listOfCatalogNumber = getListOfCatalogNum('Rittal Price List 2022 August Modified.xlsx', 'Catalog Part No.',)
-    # productUrl= getProductPage('SSTB153012')
-    scrapProductInformation('https://hoffman.nvent.com/en-us/products/encsstb153012','SSTB153012')
-    
+    listOfCatalogNumber = getListOfCatalogNum('SpiderScraps\Hoffman_scrap\Hoffman Price List 2022 June.xlsx', 'Hoffman Catalog Number',)
+    count = 0
+    for catalogNum in listOfCatalogNumber:
+        productUrl= getProductPage(catalogNum)
+        count +=1
+        print(count)
+        if productUrl !=0:
+            description = scrapProductInformation(productUrl,catalogNum)
+            df= df.append(description, ignore_index = True)
+            df.to_excel(outputDir+'\\data.xlsx', encoding='utf-8', index=False)
+    df.to_excel(outputDir+'\\data.xlsx', encoding='utf-8', index=False)
